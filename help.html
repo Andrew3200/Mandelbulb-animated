@@ -55,7 +55,7 @@
         We start with <em>z = 0</em> and repeatedly <em>square</em> it then <em>add</em> <em>c</em>.  Squaring twists and stretches; adding recentres on <em>c</em>.  If after 150 rounds the number is still small, the pixel stays dark.  If it flies off to infinity we mark how <em>quickly</em> that happened and make the pixel brighter. This is how the standard Mandelbrot set is made.
       </p>
       <p>
-        What is happening differently in our program? well, the extra symbol <em>\(\overline z\)</em> means "flip the sign of the imaginary part"—a mirror image across the horizontal axis.  Multiplying it by a depth value <em>k</em> lets us carve a true 3‑D <em>fractal cloud</em> called a Mandelbulb.
+        What is happening differently in our program? well, the extra symbol <em style="text-decoration:overline;">z</em> means "flip the sign of the imaginary part"—a mirror image across the horizontal axis.  Multiplying it by a depth value <em>k</em> lets us carve a true 3‑D <em>fractal cloud</em> called a Mandelbulb.
       </p>
       <p>
         What you see is a single translucent slice through that cloud.  The slice rotates a little every frame, giving your eyes parallax clues so you can imagine the hidden volume. The little cube in the corner is there to help you visualise how exactly this fractal cloud is rotating.  
