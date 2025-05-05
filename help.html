@@ -280,7 +280,7 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     
     /* 5. Uniforms setup */
-    gl.uniform1f(gl.getUniformLocation(prog, 'dF'), 0.04); // less barrel
+    gl.uniform1f(gl.getUniformLocation(prog, 'dF'), 0.01); // less barrel
     gl.uniform1f(gl.getUniformLocation(prog, 'sF'), 0.15);      // Moderate scanlines
     gl.uniform1f(gl.getUniformLocation(prog, 'cF'), 0.0015); // less chromatic aberration
     gl.uniform1f(gl.getUniformLocation(prog, 'dU'), 0.05);      // Light UI distortion
