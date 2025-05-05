@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>What am I looking at?</title>
+  <style>
+    :root { --edge-gap: 20px; }
+    html, body {
+      margin: 0;
+      background: #181818;
+      color: #e0e0e0;
+      font-family: "Fira Mono","Courier New",monospace;
+      /* Removed fixed height and flex centering to enable scrolling */
+    }
+    #window {
+      position: relative;
+      width: 768px;
+      max-width: 95vw;
+      background: #181818;
+      box-shadow: 0 0 32px #000a, 0 0 0 8px #222;
+      border-radius: 8px;
+      padding: calc(var(--edge-gap)*1.2);
+      box-sizing: border-box;
+      margin: var(--edge-gap) auto; 
+    }
+    h1 { margin: 0 0 1rem; font-size: 22px; text-align: center; text-decoration: underline; }
+    h2 { margin-top: 1.2rem; font-size: 18px; text-decoration: underline; }
+    p,li { line-height: 1.45; }
+    code { color: #ffd700; }
+    a.back { position: absolute; top: var(--edge-gap); right: var(--edge-gap);
+      text-decoration: underline; color: #e0e0e0; }
+  </style>
+</head>
+<body>
+  <div id="window">
+    <h1>What am I looking at?</h1>
+    <!-- NEW: Insert Mandelbrot set image from Wikipedia -->
+    <div style="text-align:center; margin:1rem 0;">
+      <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Mandel_zoom_00_mandelbrot_set.jpg/960px-Mandel_zoom_00_mandelbrot_set.jpg" crossorigin="anonymous" alt="Mandelbrot Set" style="max-width:100%;">
+    </div>
+    <!-- Mathematics focus -->
+    <p style="text-align:center;font-size:17px;margin-bottom:1rem;">
+      This is the standard manderblot set, a fractal defined by the equation<br>
+      <em>z<sup>2</sup> + c</em> where <em>z</em> and <em>c</em> are complex numbers.<br>
+    </p>
+
+    <!-- LAYMAN BUT MATH‑CENTRIC SECTION -->
+    <h2>If you’ve <em>never</em> studied complex maths</h2>
+    <ul>
+      <p>
+        <strong>Each pixel here is a numbers with two parts.</strong>  Left–right gives the real part (<em>x</em>), up–down gives the imaginary part (<em>y</em>).  Together they form <em>c = x + i y</em>.
+      </p>
+      <p>
+        We start with <em>z = 0</em> and repeatedly <em>square</em> it then <em>add</em> <em>c</em>.  Squaring twists and stretches; adding recentres on <em>c</em>.  If after 150 rounds the number is still small, the pixel stays dark.  If it flies off to infinity we mark how <em>quickly</em> that happened and make the pixel brighter. This is how the standard Mandelbrot set is made.
+      </p>
+      <p>
+        What is happening differently in our program? well, the extra symbol <em>\(\overline z\)</em> means "flip the sign of the imaginary part"—a mirror image across the horizontal axis.  Multiplying it by a depth value <em>k</em> lets us carve a true 3‑D <em>fractal cloud</em> called a Mandelbulb.
+      </p>
+      <p>
+        What you see is a single translucent slice through that cloud.  The slice rotates a little every frame, giving your eyes parallax clues so you can imagine the hidden volume. The little cube in the corner is there to help you visualise how exactly this fractal cloud is rotating.  
+      </p>
+    </ul>
+
+    <!-- EXPERT SECTION -->
+    <h2>If you already know the Mandelbrot set</h2>
+    <ul>
+        <p>
+            We are using the same equation as the Mandelbrot set, but with a twist. The equation is
+            <em>
+              f<sub>c,k</sub>(z) = z<sup>2</sup> + c + k <span style="text-decoration:overline;">z</span>
+            </em>.
+            The extra overline (<span style="text-decoration:overline;">z</span>) means “flip the sign of the imaginary part”
+            — a mirror image across the horizontal axis. Multiplying it by a depth value <em>k</em> lets us carve a
+            true 3-D <em>fractal cloud</em> called a Mandelbulb.
+          </p>
+          
+          <p>
+            We iterate this function on a plane in
+            (ℂ × ℝ). The axis buttons permute which spatial coordinate becomes <em>k</em>. Each frame we rotate by an angle
+            <em>θ</em>; eight sector snaps give octahedral symmetry viewpoints. Activity measure is the first
+            <em>|z<sub>n</sub>| &gt; 16</em>.
+          </p>
+          
+          <ul>
+            <li>Grid = 256 × N (aspect-matched). CPU computes in JS; colour map is direct <em>n/maxIter</em>.</li>
+            <li>Overlay is a single fragment shader (barrel, scan-lines, chroma). Disable via “Shaders”.</li>
+          </ul>
+    </ul>
+
+    <p style="margin-top:1.8rem;text-align:center;font-size:13px;opacity:.6;">
+      © 2025 Kyriacou Andreas</p>
+  </div>
+
+  <!-- NEW: Append CRT POST‑PROCESSING SHADER -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+  (() => {
+    /* 1. Create an overlay canvas inside #window */
+    const wnd  = document.getElementById('window');
+    const DPR  = window.devicePixelRatio || 1;
+    // Changed z-index to 1 to make shader visible
+    const crt = Object.assign(document.createElement('canvas'), {
+      id:'crtCanvas', 
+      style:'position:absolute;top:0;left:0;z-index:9999;pointer-events:none;opacity:1'
+    });
+    wnd.appendChild(crt);
+  
+    /* 2. WebGL boilerplate (same as reference) */
+    const gl = crt.getContext('webgl');
+    if (!gl) { 
+      console.warn('WebGL not supported'); 
+      return; 
+    }
+  
+    const resize = () => {
+      const r = wnd.getBoundingClientRect();
+      crt.width  = r.width * DPR;
+      crt.height = r.height * DPR;
+      crt.style.width  = r.width + 'px';
+      crt.style.height = r.height + 'px';
+      gl.viewport(0, 0, crt.width, crt.height);
+    };
+    resize();
+    
+    /* 3. Shaders (vertex & fragment shaders are exactly the same as in the reference) */
+    const V = `
+      attribute vec2 aPos; varying vec2 vUV;
+      void main() { vUV = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }
+    `;
+    const F = `
+      precision mediump float;
+      uniform sampler2D uFrac;
+      uniform sampler2D uUI;
+      uniform float uT;
+      uniform float dF, dU;
+      uniform float sF, sU;
+      uniform float cF, cU;
+      uniform float g;
+      varying vec2 vUV;
+
+      vec2 warp(vec2 uv, float k){
+        uv = uv * 2.0 - 1.0;
+        float r = dot(uv,uv);
+        uv += uv * r * k;
+        return uv * 0.5 + 0.5;
+      }
+
+      vec3 grade(vec3 c){
+        c = pow(c, vec3(g));
+        return mix(vec3(0.08), vec3(1.00), c);
+      }
+
+      vec3 sampleRGB(sampler2D tex, vec2 uv, float shift){
+        vec2 rUV = uv + vec2(shift, 0.0);   // Red shifted right
+        vec2 gUV = uv;                       // Green centered
+        vec2 bUV = uv - vec2(shift, 0.0);   // Blue shifted left
+        
+        float r = texture2D(tex, rUV).r;     // Sample red from red channel
+        float g = texture2D(tex, gUV).g;     // Sample green from green channel
+        float b = texture2D(tex, bUV).b;     // Sample blue from blue channel
+        
+        return vec3(r, g, b);
+      }
+
+      float scanMask(float y, float mixAmt){
+        const float maskPeriod = 6.0;
+        const float maskDuty   = 0.7;
+        float band = step(maskDuty, fract(y / maskPeriod));
+        float flicker = sin((y + uT * 60.0) * 3.14159) * 0.5 + 0.5;
+        return mix(1.0, mix(band, flicker, 0.4), mixAmt);
+      }
+
+      void main(){
+        vec2 uvF = warp(vUV, dF);
+        vec2 uvU = warp(vUV, dU);
+        vec3 colF = sampleRGB(uFrac, uvF, cF);
+        vec4 uiPix = texture2D(uUI, uvU);
+        vec3 colU = sampleRGB(uUI, uvU, cU) * uiPix.a;
+        float maskF = scanMask(gl_FragCoord.y, sF);
+        float maskU = scanMask(gl_FragCoord.y, sU);
+        colF *= maskF;
+        colU *= maskU;
+        vec3 outColor = mix(colF, colU, uiPix.a);
+        outColor = grade(outColor);
+        gl_FragColor = vec4(outColor, 1.0);
+      }
+    `;
+    const compile = (src, type) => {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        console.error('Shader compile error:', gl.getShaderInfoLog(sh));
+        throw gl.getShaderInfoLog(sh);
+      }
+      return sh;
+    };
+    const prog = gl.createProgram();
+    gl.attachShader(prog, compile(V, gl.VERTEX_SHADER));
+    gl.attachShader(prog, compile(F, gl.FRAGMENT_SHADER));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      console.error('Shader link error:', gl.getProgramInfoLog(prog));
+      throw gl.getProgramInfoLog(prog);
+    }
+    gl.useProgram(prog);
+    
+    /* 4. Screen‑quad geometry */
+    const quad = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([ -1,-1,  1,-1, -1, 1,  1, 1 ]), gl.STATIC_DRAW);
+    const pos = gl.getAttribLocation(prog, 'aPos');
+    gl.enableVertexAttribArray(pos);
+    gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+    
+    const uFrac = gl.getUniformLocation(prog, 'uFrac');
+    const uUI   = gl.getUniformLocation(prog, 'uUI');
+    gl.uniform1i(uFrac, 0);
+    gl.uniform1i(uUI, 1);
+    
+    const texFrac = gl.createTexture();
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texFrac);
+
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   // keep if you want the image upright
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const texUI   = gl.createTexture();
+
+    // Remove test pattern code
+    // Use html2canvas to capture #window and upload as uFrac
+    let drawStarted = false;
+    async function getSnapshotForShader() {
+      // Hide CRT overlay before capture
+      crt.style.display = 'none';
+      await new Promise(r => setTimeout(r, 10)); // Let browser update
+      const snap = await html2canvas(wnd, {
+        backgroundColor: null,
+        scale: DPR,
+        useCORS: true,            // ✱ ADDED – request images with CORS
+        allowTaint: false,        // ✱ ADDED – refuse if CORS fails
+        ignoreElements: el => el.id === 'crtCanvas'
+      });
+      crt.style.display = 'block'; // Show CRT overlay again
+      // Draw the snapshot into an offscreen canvas matching CRT overlay size
+      const offscreen = document.createElement('canvas');
+      offscreen.width = crt.width;
+      offscreen.height = crt.height;
+      const ctx = offscreen.getContext('2d');
+      ctx.drawImage(snap, 0, 0, snap.width, snap.height, 0, 0, offscreen.width, offscreen.height);
+      return offscreen;
+    }
+
+    // Remove the draw loop and only run the shader once
+    async function runShaderOnce() {
+      const snap = await getSnapshotForShader();
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texFrac);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, snap);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.uniform1f(gl.getUniformLocation(prog, 'uT'), 0.0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
+    // Create a 1x1 transparent texture for uUI
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, texUI);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    
+    /* 5. Uniforms setup */
+    gl.uniform1f(gl.getUniformLocation(prog, 'dF'), 0.04); // less barrel
+    gl.uniform1f(gl.getUniformLocation(prog, 'sF'), 0.15);      // Moderate scanlines
+    gl.uniform1f(gl.getUniformLocation(prog, 'cF'), 0.0015); // less chromatic aberration
+    gl.uniform1f(gl.getUniformLocation(prog, 'dU'), 0.05);      // Light UI distortion
+    gl.uniform1f(gl.getUniformLocation(prog, 'sU'), 0.05);      // Light UI scanlines
+    gl.uniform1f(gl.getUniformLocation(prog, 'cU'), 0.002);     // Light UI chromatic aberration
+    gl.uniform1f(gl.getUniformLocation(prog, 'g'), 2);   // lower gamma
+    
+    // On load, run shader once
+    window.addEventListener('load', async () => {
+      resize();
+      await runShaderOnce();
+    });
+    // call resize on load
+    window.addEventListener('load', resize);
+  })();
+  </script>
+</body>
+</html>

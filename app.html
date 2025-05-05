@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CPU Mandelbrot Volume Renderer with 3D Overlay</title>
+  <style>
+    #window.snapshot-mode { background: transparent !important; }
+    /* ==========  UNIFIED FONT  ========== */
+    body, button, input, label, span {
+      font-family: 'Fira Mono','Courier New',Courier,monospace !important;
+      font-size: 13px !important;
+      font-weight: normal;
+    }
+
+    /* ────────────────────────────
+       GLOBAL LAYOUT & THEME       
+       ────────────────────────────*/
+    :root{
+      --edge-gap:20px;   /* single source‑of‑truth for offsets */
+    }
+    html, body {
+      margin:0;
+      padding:0;
+      overflow:hidden;
+      background:#181818;
+      color:#e0e0e0;
+      width:100vw;
+      height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    /* Main window that everything is anchored to */
+    #window{
+      position:relative;               /* <‑‑ containing block for all children */
+      width:768px;
+      height:552px;
+      background:#181818;
+      box-shadow:0 0 32px #000a,0 0 0 8px #222;
+      overflow:hidden;
+      border-radius:8px;
+    }
+
+    canvas{display:block;}
+
+    /* ────────────────────────────
+       GENERIC UI ELEMENT STYLES   
+       ────────────────────────────*/
+    /* Removed duplicate font settings */
+    
+    /* Updated panel (#controls) border & positioning */
+    #controls{
+      position: relative;
+      width: fit-content;
+      min-width:260px;
+      padding: 0;
+      z-index:1000;
+      top: var(--edge-gap);
+      left: var(--edge-gap);
+      border: 2px solid #888;
+      box-shadow: 0 0 0 2px #444 inset;
+    }
+
+    #bottomControls,
+    .axis-btn,
+    #overlayCanvas,
+    #toggleMenuBtn{
+      position:absolute;
+    }
+    #controls:before,#controls:after,
+    #bottomControls:before,#bottomControls:after,
+    .axis-btn:before,.axis-btn:after,
+    #overlayCanvas:before,#overlayCanvas:after,
+    #toggleMenuBtn:before,#toggleMenuBtn:after{
+      content:'';
+      position:absolute;
+      width:8px;
+      height:8px;
+    }
+
+    /* ────────────────────────────
+       INDIVIDUAL COMPONENT RULES 
+       ────────────────────────────*/
+    /* ▸ Parameter menu — always directly below toggle */
+    #controls>div,#controls label,#controls input{
+      font-size:13px;
+    }
+    #controls>div{
+      border-top:2px solid #888;
+      border-left:2px solid #888;
+      border-right:2px solid #888;
+      border-bottom:none;
+      padding:4px 8px;
+      margin:0;
+      background:#181818;
+    }
+    #controls>div:first-child{border-top:2px solid #888;}
+    #controls>div:last-child{border-bottom:2px solid #888;}
+    #controls label{
+      margin-right:8px;
+      letter-spacing:1px;
+    }
+    #controls input[type="number"]{
+      width:60px;
+      margin:2px;
+      background:#111;
+      color:#e0e0e0;
+      border:1px solid #555;
+      padding:2px 4px;
+    }
+    #controls input[type="range"]{
+      width:90px;
+      background:linear-gradient(to right,#444 0%,#888 100%);
+      accent-color:#888;
+      height:4px;
+      border-radius:2px;
+      outline:none;
+      margin:0 4px;
+    }
+    #controls input[type="range"]::-webkit-slider-thumb,
+    #controls input[type="range"]::-moz-range-thumb{
+      background:#e0e0e0;
+      border:1px solid #888;
+      width:14px;
+      height:14px;
+      box-shadow:0 0 2px #444;
+    }
+
+    /* ▸ Toggle button appears in the very top left */
+    #toggleMenuBtn{
+      display:block !important;
+      width:90px;
+      height:28px;
+      font-size:15px;
+      text-transform:uppercase;
+      letter-spacing:1px;
+      padding:0;
+      margin:0;
+      top:0;
+      left:0;
+      z-index:1002;
+      transform:none;
+    }
+
+    /* Show toggle button when menu is hidden */
+    #controls[style*="display: none"] ~ #toggleMenuBtn {display:block;}
+    
+    /* brighter range thumb */
+    input[type="range"]::-webkit-slider-thumb,
+    input[type="range"]::-moz-range-thumb{
+      background:#fff!important;                /* bright dot */
+      border:2px solid #444!important;
+      width:14px!important; height:14px!important;
+    }
+
+    /* bright arrow buttons on <input type="number"> */
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button{
+      filter: invert(100%)!important;           /* white arrows on dark bg */
+      opacity: 1!important;
+    }
+
+    /* ▸ Axis buttons */
+    .axis-btn{
+      padding:4px 12px;
+      font-size:15px;
+      cursor:pointer;
+      z-index:1001;
+    }
+    #yAxisBtn{
+      top:var(--edge-gap);
+      left:50%;
+      transform:translateX(-50%);
+    }
+    #xAxisBtn{
+      top:50%;
+      right:var(--edge-gap);
+      transform:translateY(-50%);
+    }
+    #zAxisBtn{
+      top:50%;
+      left:var(--edge-gap);
+      transform:translateY(-50%);
+    }
+
+    /* ▸ Cube overlay — top‑right */
+    #overlayCanvas{
+      top:var(--edge-gap);
+      right:var(--edge-gap);
+      width:64px;
+      height:64px;
+      background:#111;
+      z-index:1000;
+    }
+
+    /* ▸ Bottom playback controls — bottom‑centre */
+    #bottomControls{
+      bottom:var(--edge-gap);
+      left:50%;
+      transform:translateX(-50%);
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 16px;
+      width:fit-content;
+      z-index:1000;
+    }
+
+    /* Buttons inside controls & bottomControls */
+    #controls button, #bottomControls button, .axis-btn{
+      background:#181818;
+      color:#e0e0e0;
+      border:2px solid #888;
+      box-shadow:0 0 0 2px #444 inset;
+      transition:background .1s, color .1s;
+    }
+    #controls button:active, #bottomControls button:active, .axis-btn:active{
+      background:#333;
+      color:#fff;
+    }
+    #controls button:disabled, #bottomControls button:disabled, .axis-btn:disabled{
+      color:#888;
+      border-color:#444;
+      background:#222;
+      cursor:not-allowed;
+    }
+
+    /* Canvas filling the window */
+    #mandelbrotCanvas{
+      position:absolute;
+      top:0;
+      left:0;
+      width:768px;
+      height:552px;
+      z-index:0;
+      display:block;
+    }
+
+    /* ── quick‑tune overrides ─────────────────────────── */
+
+    /* 1️⃣  Make the viewport window ~20 % larger (keeps aspect 1.39 : 1) */
+    #window{
+      width:768px;
+      height:552px;
+    }
+
+    /* Resize the Mandelbrot canvas to fill the larger window */
+    #mandelbrotCanvas{
+      width:768px;
+      height:552px;
+    }
+
+    /* 2️⃣  Beef‑up the “Update & Rerun” button typography */
+    #updateBtn{
+      font-size:15px;
+      font-weight:normal;
+      text-transform:none;
+      padding: 4px 12px;
+      letter-spacing:normal;
+      background:#181818;
+      color:#e0e0e0;
+      border:2px solid #888;
+      box-shadow:0 0 0 2px #444 inset;
+      transition:background .1s, color .1s;
+    }
+
+    /* 3️⃣  Always‑visible Hide/Show toggle just under the menu */
+    /* (No extra changes required for #toggleMenuBtn here) */
+
+    /* 4️⃣  Guarantee axis buttons stay visible */
+    .axis-btn{
+      z-index:1001;
+    }
+
+    /* 5️⃣  (Optional) adjust edge gap once, if you’d like tighter spacing */
+    /* :root{ --edge-gap: 16px; } */
+
+    /* ===== final override ===== */
+
+    /* ─── ONE‑TIME CLEAN‑UP / FINAL OVERRIDES ────────────────────────── */
+
+    /* 2.  “Update” inherits same style, no special rules needed other than id */
+    .updateBtn{
+      padding:4px 12px;
+    }
+
+    /* 3.  Floating “Show Menu” button — left of Rotate Z */
+        /* 1️⃣  Place the floating “Show” button exactly like Rotate‑Z */
+    #btnShow{
+      padding:4px 12px;
+      position:absolute;
+      /* same vertical line as Rotate Z */
+      top:var(--edge-gap);
+      /* 50 % = centre of #window  ▸  +72 px = gap + yAxisBtn width */
+      left:calc(50% - 100px);
+      transform:translateX(-50%);
+      z-index:1000;
+
+      /* existing visual styles (keep) */
+      background:#181818;
+      color:#e0e0e0;
+      border:2px solid #888;
+      box-shadow:0 0 0 2px #444 inset;
+    }
+
+
+    /* header: hide (left) , update (right) */
+    .menu-header{display:flex;justify-content:space-between;padding:0px 0px !important;border-bottom:0px !important;}
+    .menu-header .btn{min-width:88px}
+
+    /* RANGE — bright knob + faint track ---------------------------------- */
+  input[type="range"]{
+    accent-color:#ddd;     /* bright track */
+  }
+  input[type="range"]::-webkit-slider-thumb,
+  input[type="range"]::-moz-range-thumb{
+    background:#fff;
+    border:2px solid #444;
+    width:14px; height:14px;          /* > default → clearer */
+    box-shadow:0 0 2px #000;
+  }
+
+  /* NUMBER — invert the default spin arrows ---------------------------- */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button{
+    opacity:1;
+    filter:invert(100%);  /* white arrows on dark background */
+  }
+
+  /* OPTIONAL: make the value text brighter while focused */
+  input[type="number"]:focus{
+    color:#fff;
+  }
+
+  /* make the new RPM arrow buttons look like the others */
+  #rpmRow button{
+    width:26px;
+    padding:0;
+    font-size:16px;
+  }
+
+  </style>
+</head>
+<body>
+  <div id="window">
+    <button id="btnShow" class="menu-btn">Show Menu</button>
+    <!-- Parameter menu -->
+    <div id="controls">
+      <div class="menu-header">
+      
+        <!-- ▼ NEW: Update button in header -->
+        <button id="updateBtn" class="menu-btn">Update</button>
+      
+        <!-- Hide button stays here -->
+        <button id="btnHide"  class="menu-btn">Hide Menu</button>
+      </div>
+      
+      <!-- REMOVE X/Y/Z min/max controls -->
+      <!--
+      <div>
+        <label>X min: <input id="minReal" type="number" step="0.01" value="-2.782"></label>
+        <label>X max: <input id="maxReal" type="number" step="0.01" value="2.782"></label>
+      </div>
+      <div>
+        <label>Y min: <input id="minImag" type="number" step="0.01" value="-2.782"></label>
+        <label>Y max: <input id="maxImag" type="number" step="0.01" value="2.782"></label>
+      </div>
+      <div>
+        <label>Z min: <input id="minK" type="number" step="0.1" value="-2"></label>
+        <label>Z max: <input id="maxK" type="number" step="0.1" value="2"></label>
+      </div>
+      -->
+      <!-- RPM row with coarse buttons -->
+      <div id="rpmRow">
+        <label style="font-size:12px;">Speed (RPM):</label>
+        <button id="rpmDec10">«</button>
+        <button id="rpmDec1">‹</button>
+        <span id="rpmValue" style="width:40px;display:inline-block;text-align:center;">6</span>
+        <button id="rpmInc1">›</button>
+        <button id="rpmInc10">»</button>
+      </div>
+      <!-- NEW: UI Shaders toggle -->
+      <div id="shaderTogglediv">
+        <label style="font-size:12px;"><input type="checkbox" id="shaderToggle" checked> Enable UI Shaders</label>
+      </div>
+      <div
+        class="menu-btn"
+        onclick="window.open('help.html', '_blank')"
+        style="cursor:pointer;
+              padding:6px 14px;
+              border:2px solid #888;
+              border-radius:4px;
+              background:#181818;
+              color:#e0e0e0;
+              box-shadow:0 0 0 2px #444 inset;
+              text-align:center;"
+      >
+        <i>What&nbsp;am&nbsp;I&nbsp;looking&nbsp;at?</i>
+      </div>
+
+    </div>
+
+    <!-- Axis buttons -->
+    <button id="xAxisBtn" class="axis-btn">Rotate Y</button>
+    <button id="yAxisBtn" class="axis-btn">Rotate Z</button>
+    <button id="zAxisBtn" class="axis-btn" disabled>Rotate X</button>
+
+    <!-- Mandelbrot & overlay canvases -->
+    <canvas id="mandelbrotCanvas"></canvas>
+    <canvas id="overlayCanvas" width="64" height="64"></canvas>
+
+    <!-- Bottom playback controls -->
+    <div id="bottomControls">
+      <button id="leftBtn">⟵</button>
+      <button id="toggleBtn">Pause</button>
+      <button id="rightBtn">⟶</button>
+      <label><input type="checkbox" id="snapCheckbox"> Snap at 1/8th</label>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <!-- ─── CRT POST‑PROCESSING OVERLAY ────────────────────────────────── -->
+  <script>
+    (() => {
+      /* 1. Create an overlay canvas inside #window */
+      const wnd  = document.getElementById('window');
+      const src  = document.getElementById('mandelbrotCanvas');
+      const cube = document.getElementById('overlayCanvas');
+      const DPR  = window.devicePixelRatio || 1;
+      
+      const crt = Object.assign(document.createElement('canvas'), {
+        id:'crtCanvas', style:'position:absolute;top:0;left:0;z-index:2000;pointer-events:none'
+      });
+      wnd.appendChild(crt);
+
+      const shaderToggle = document.getElementById('shaderToggle');
+      let  shadersEnabled = shaderToggle.checked;
+
+      /* keep DOM & internal flag in sync */
+      shaderToggle.addEventListener('change', () => {
+        shadersEnabled = shaderToggle.checked;
+
+        /* quickest visual feedback: simply hide/show the canvas */
+        crt.style.display = shadersEnabled ? 'block' : 'none';
+
+        /* take a fresh UI snapshot so html2canvas knows about the change */
+        captureUI();                 // reuse your existing helper
+      });
+    
+      /* 2. WebGL boilerplate */
+      const gl = crt.getContext('webgl');
+      if (!gl) { console.warn('WebGL not supported'); return; }
+    
+      /* Resize helper so the overlay always matches #window */
+      const resize = () => {
+        const r = wnd.getBoundingClientRect();
+        crt.width  = r.width;
+        crt.height = r.height;
+        gl.viewport(0, 0, r.width, r.height);
+      };
+      /* 3. Shaders */
+      const V = `
+        attribute vec2 aPos; varying vec2 vUV;
+        void main() { vUV = aPos * .5 + .5; gl_Position = vec4(aPos, 0.0, 1.0); }
+      `;
+      const F = `
+        precision mediump float;
+
+        uniform sampler2D uFrac;   /* fractal  (unit 0) */
+        uniform sampler2D uUI;     /* UI       (unit 1) */
+        uniform float     uT;      /* time     (seconds) */
+
+        /* per‑layer controls */
+        uniform float dF, dU;      /* barrel distortion          */
+        uniform float sF, sU;      /* scan‑line mix  0–1         */
+        uniform float cF, cU;      /* chrom‑abbr shift (pixels)  */
+        uniform float g;           /* overall gamma / luma remap */
+
+        varying vec2 vUV;
+
+        /* ─── helpers ───────────────────────── */
+
+        /* barrel‑warp UVs */
+        vec2 warp(vec2 uv,float k){
+            uv = uv*2.0 - 1.0;
+            float r = dot(uv,uv);
+            uv += uv*r*k;
+            return uv*0.5 + 0.5;
+        }
+
+        /* luma‑remap to dark‑gray/CRT‑white */
+        vec3 grade(vec3 c){
+            c = pow(c, vec3(g));       /* gamma–lift shadows   */
+            return mix(vec3(0.08),     /* dark gray            */
+                      vec3(1.00), c); /* CRT white            */
+        }
+
+        /* chromatic aberration sample */
+        vec3 sampleRGB(sampler2D tex, vec2 uv, float shift){
+            return vec3(
+                texture2D(tex, uv + vec2( shift,0.0)).r,
+                texture2D(tex, uv                        ).g,
+                texture2D(tex, uv + vec2(-shift,0.0)).b
+            );
+        }
+
+        /* fat scan‑line mask (3‑pixel stripes) */
+        float scanMask(float y, float mixAmt){
+            const float maskPeriod = 6.0;      /* pixels   */
+            const float maskDuty   = 0.7;     /* 0–1 duty */
+            float band = step(maskDuty, fract(y / maskPeriod));
+            float flicker = sin((y+uT*60.0)*3.14159)*0.5 + 0.5;
+            return mix(1.0, mix(band, flicker, 0.4), mixAmt);
+        }
+
+        /* ─── fragment ───────────────────────── */
+
+        void main(){
+            /* warped UV for each layer */
+            vec2 uvF = warp(vUV, dF);
+            vec2 uvU = warp(vUV, dU);
+
+            /* sample with chrom‑abbr */
+            vec3 colF = sampleRGB(uFrac, uvF, cF);
+            vec4 uiPix= texture2D(uUI , uvU);
+            vec3 colU = sampleRGB(uUI,  uvU, cU) * uiPix.a;
+
+            /* apply scan‑line masks */
+            float maskF = scanMask(gl_FragCoord.y, sF);
+            float maskU = scanMask(gl_FragCoord.y, sU);
+            colF *= maskF;
+            colU *= maskU;
+
+            /* composite  (UI over fractal) */
+            vec3 outColor = mix(colF, colU, uiPix.a);
+
+            /* grade to CRT white / dark gray */
+            outColor = grade(outColor);
+
+            gl_FragColor = vec4(outColor, 1.0);
+        }
+
+      `;
+      const compile = (src, type) => {
+        const sh = gl.createShader(type);
+        gl.shaderSource(sh, src); gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS))
+          throw gl.getShaderInfoLog(sh);
+        return sh;
+      };
+      const prog = gl.createProgram();
+      gl.attachShader(prog, compile(V, gl.VERTEX_SHADER));
+      gl.attachShader(prog, compile(F, gl.FRAGMENT_SHADER));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS))
+        throw gl.getProgramInfoLog(prog);
+      gl.useProgram(prog);
+    
+      /* 4. Screen‑quad geometry */
+      const quad = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([ -1,-1,  1,-1, -1, 1,  1, 1 ]),
+        gl.STATIC_DRAW
+      );
+      const pos = gl.getAttribLocation(prog, 'aPos');
+      gl.enableVertexAttribArray(pos);
+      gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+    
+      const uFrac = gl.getUniformLocation(prog, 'uFrac');
+      const uUI   = gl.getUniformLocation(prog, 'uUI');
+      gl.uniform1i(uFrac, 0);   // texture unit 0
+      gl.uniform1i(uUI,   1);   // texture unit 1
+
+      const texFrac = gl.createTexture();   // fractal (unit 0)
+      const texUI   = gl.createTexture();   // UI      (unit 1)
+
+      /* 5. Texture + uniforms */
+      gl.bindTexture(gl.TEXTURE_2D, texFrac);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   //  <‑‑ add this ONCE
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    
+      gl.bindTexture(gl.TEXTURE_2D, texUI);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    
+      /* tweak once here ↓ */
+      // barrel distortion    -  b
+      // scan‑line strength   -  s
+      // shadow‑mask strength -  m
+      // chromatic aberration -  c
+
+      /* fractal settings */
+      gl.uniform1f(gl.getUniformLocation(prog,'dF'), 0.1);
+      gl.uniform1f(gl.getUniformLocation(prog,'sF'), 0.2);
+      //gl.uniform1f(gl.getUniformLocation(prog,'mF'), 0.35);
+      gl.uniform1f(gl.getUniformLocation(prog,'cF'), 0.0025);
+
+      /* mild CRT on UI */
+      gl.uniform1f(gl.getUniformLocation(prog,'dU'), 0.01);
+      gl.uniform1f(gl.getUniformLocation(prog,'sU'), 0.05);
+      //gl.uniform1f(gl.getUniformLocation(prog,'mU'), 0.02);
+      gl.uniform1f(gl.getUniformLocation(prog,'cU'), 0.001);
+
+      gl.uniform1f(gl.getUniformLocation(prog,'g'), 1); // gamma
+
+      const uiSnap   = document.createElement('canvas');
+      
+      const fracBuf = document.createElement('canvas');
+      const fbCtx   = fracBuf.getContext('2d');
+      fracBuf.width  = crt.width;
+      fracBuf.height = crt.height;
+
+      let cubeX=0, cubeY=0;
+      function locateCube(){
+        const win = wnd.getBoundingClientRect();
+        const cub = cube.getBoundingClientRect();
+        cubeX = Math.round(cub.left - win.left);
+        cubeY = Math.round(cub.top  - win.top );
+      }
+      locateCube();
+
+      async function captureUI(){
+        const shaderToggle = document.getElementById('shaderToggle');
+        if (!shaderToggle.checked) return;
+        wnd.classList.add('snapshot-mode');
+        const snap = await html2canvas(wnd,{
+          backgroundColor:null,
+          scale:DPR,  // keep the DPR line if you added it
+          ignoreElements:el=>(
+            el.id==='mandelbrotCanvas'||
+            el.id==='crtCanvas'       ||
+            el.id==='overlayCanvas'   // skip cube
+          )
+        });
+        wnd.classList.remove('snapshot-mode');
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D,texUI);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,snap);
+      }
+      captureUI(); 
+
+      const captureUIThrottled = (() => {
+        let next = 0;
+        return () => {
+          const now = performance.now();
+          if (now > next) { next = now + 250; captureUI(); }  // ≤ 4 Hz
+        };
+      })();
+
+      const scheduleCapture = (() => {
+        let pending = false;            // collapse bursts
+
+        return () => {
+          if (pending) return;          // already queued
+          pending = true;
+
+          /* rAF #1: runs right after all event‑handlers finish
+            rAF #2: runs after the browser has committed the paint    */
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              pending = false;
+              captureUI();              // safe—DOM is fully updated
+            });
+          });
+        };
+      })();
+
+      /* Listen for *any* mouse button in the document */
+      document.addEventListener('click', scheduleCapture, { passive: true });
+
+
+      /* --- drop this right after your button click listeners --- */
+      let needSnap = false;
+      const snapNow = () => { needSnap = false; captureUI(); };
+
+      const uiRoot = document.getElementById('controls'); 
+      new MutationObserver(muts=>{
+        if (muts.length) snapNow();        // one snapshot, no loop
+      }).observe(uiRoot,{
+        attributes:true,
+        subtree:true,
+        attributeFilter:['disabled']
+      });
+
+      const watch = [leftBtn, rightBtn, xAxisBtn, yAxisBtn, zAxisBtn, btnHide, btnShow];
+      const last  = new Map();         // element → previous .disabled value
+
+      function checkLocks(){
+        let changed = false;
+        for (const el of watch){
+          const cur = el.disabled;
+          if (last.get(el) !== cur){
+            last.set(el, cur);
+            changed = true;
+          }
+        }
+        if (changed) captureUI();      // exactly one snapshot
+      }
+
+      /* ——— 2‑A. capture helper that hides the overlay ——— */
+      const captureDOM = async () => {
+        return html2canvas(
+          wnd,
+          {
+            backgroundColor: null,
+            scale: 1,                              // keep the DPR line if you added it
+            ignoreElements: el => el.id === 'crtCanvas'  // <‑‑ prevents self‑capture
+          }
+        );
+      };
+
+      /* ——— 2‑B. make the resize helper DPR‑aware ——— */
+      function resizeCRT(){
+
+        const r = wnd.getBoundingClientRect();
+
+        crt.width  = r.width  * DPR;
+        crt.height = r.height * DPR;
+        crt.style.width  = r.width  + 'px';
+        crt.style.height = r.height + 'px';
+        gl.viewport(0, 0, crt.width, crt.height);
+
+        /* ★  keep the CPU buffer exactly the same size */
+        fracBuf.width  = crt.width;      //  ← add
+        fracBuf.height = crt.height;     //  ← add
+
+        locateCube();                    //  ← keep
+      }
+      
+      resizeCRT();
+      captureUI();
+
+      /* ——— 3. the **only** draw loop ——— */
+      const MAX_FPS = 60;          // drop to 15‑20 if the CPU still struggles
+      let lastT = 0;
+
+      const draw = (t) => {
+        
+        requestAnimationFrame(draw);
+        if (!shadersEnabled) {
+          return;
+        }
+
+        fbCtx.clearRect(0,0,crt.width,crt.height);    
+
+        /* full‑screen fractal */
+        fbCtx.drawImage(
+          src,                     // image
+          0,   0,                  // src x,y
+          src.width, src.height,   // src w,h  (CSS‑px)
+          0,   0,                  // dst x,y
+          crt.width, crt.height    // dst w,h  (device‑px)
+        );
+
+        /* cube, DPI‑aware */
+        fbCtx.drawImage(
+          cube,
+          0, 0,  cube.width, cube.height,               // src rect
+          cubeX * DPR, cubeY * DPR,                     // dst pos
+          cube.width * DPR, cube.height * DPR           // dst size
+        );
+
+        /* 3. Upload ONE texture to WebGL */
+        gl.activeTexture(gl.TEXTURE0);                   // <- unit 0
+        gl.bindTexture  (gl.TEXTURE_2D, texFrac);
+        gl.texImage2D(
+          gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA,
+          gl.UNSIGNED_BYTE, fracBuf          // <- upload buffer with cube
+        );
+
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, texUI);
+        
+
+        gl.uniform1f(gl.getUniformLocation(prog,'uT'), t * 0.001);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+        checkLocks();
+        
+      };
+      requestAnimationFrame(draw);
+    })();
+  </script>
+  <!-- ─────────────────────────────────────────────────────────────────── -->  
+  
+  <script>
+    /*  JavaScript is unchanged except for moving toggleMenuBtn out of #controls */
+    const maxIter = 150, bailoutSq = 16*16;
+    let gridW = 256, gridH = 256;
+    let numSlices = 240, fps = 24;
+    let frameInterval = 1000 / fps;
+    let sectorSize = numSlices / 8;
+
+    let frameIndex = 0;
+    let autoSpinning = true, spinDirection = 1;
+    let pendingSnap = false, spinStepsRemaining = 0;
+    let pendingAxis = null, pendingSwapFrame = 0, currentAxis = 'Z';
+
+    function complexAdd(a,b){return{r:a.r+b.r,i:a.i+b.i};}
+    function complexMultiply(a,b){return{r:a.r*b.r-a.i*b.i,i:a.r*b.i+a.i*b.r};}
+    function complexConj(a){return{r:a.r,i:-a.i};}
+    function magnitudeSq(a){return a.r*a.r+a.i*a.i;}
+    function iterateFunc(z,c,d){const z2=complexMultiply(z,z), cz=complexConj(z), term={r:d*cz.r,i:d*cz.i};return complexAdd(z2, complexAdd(c,term));}
+    function isInSet(cx,cy,d){let z={r:0,i:0}; const c={r:cx,i:cy}; for(let i=0;i<maxIter;i++){ if(magnitudeSq(z)>=bailoutSq) return i; z=iterateFunc(z,c,d);} return maxIter;}
+
+    function computeSlice(axis,theta,bounds){
+      const {minReal,maxReal,minImag,maxImag,minK,maxK}=bounds;
+      const rangeX=maxReal-minReal, rangeY=maxImag-minImag;
+      const centerK=(minK+maxK)/2;
+      const cosT=Math.cos(theta), sinT=Math.sin(theta);
+      const slice=[];
+      for(let j=0;j<gridH;j++){
+        const row=[];
+        const cy=minImag+(j/(gridH-1))*rangeY;
+        for(let i=0;i<gridW;i++){
+          const x0=minReal+(i/(gridW-1))*rangeX;
+          let xRot,yRot,zRot;
+          if(axis==='X'){
+            xRot=x0; yRot=centerK*cosT-cy*sinT; zRot=centerK*sinT+cy*cosT;
+          } else if(axis==='Y'){
+            xRot=x0*cosT+cy*sinT; yRot=centerK; zRot=-x0*sinT+cy*cosT;
+          } else {
+            xRot=x0*cosT-centerK*sinT; yRot=x0*sinT+centerK*cosT; zRot=cy;
+          }
+          row.push(isInSet(xRot,zRot,yRot));
+        }
+        slice.push(row);
+      }
+      return slice;
+    }
+
+    // Swap Y and Z in cubeVerts
+    const cubeVerts=[
+      [-1,-1,-1], [1,-1,-1], [1,1,-1], [-1,1,-1],
+      [-1,-1,1], [1,-1,1], [1,1,1], [-1,1,1]
+    ].map(([x,y,z])=>[x,z,y]);
+    const cubeEdges=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+    function rotateRodrigues(v,u,t){
+      const cosT=Math.cos(t), sinT=Math.sin(t);
+      const [ux,uy,uz]=u;
+      const dot=ux*v[0]+uy*v[1]+uz*v[2];
+      return[
+        v[0]*cosT+(uy*v[2]-uz*v[1])*sinT+ux*dot*(1-cosT),
+        v[1]*cosT+(uz*v[0]-ux*v[2])*sinT+uy*dot*(1-cosT),
+        v[2]*cosT+(ux*v[1]-uy*v[0])*sinT+uz*dot*(1-cosT)
+      ];
+    }
+
+    function drawOverlay(){
+      const ocan=document.getElementById('overlayCanvas');
+      const octx=ocan.getContext('2d');
+      octx.clearRect(0,0,64,64);
+      let theta=(frameIndex/numSlices)*2*Math.PI;
+      const axesVec={X:[1,0,0],Y:[0,0,1],Z:[0,1,0]};
+      const u=axesVec[currentAxis];
+      if(currentAxis==='Y') theta=-theta;
+      const camDist=3,cx=32,cy=32,len=14;
+      octx.strokeStyle='#fff';octx.lineWidth=1;octx.beginPath();
+      cubeEdges.forEach(([i,j])=>{
+        const vi=rotateRodrigues(cubeVerts[i],u,theta);
+        const vj=rotateRodrigues(cubeVerts[j],u,theta);
+        const zi=camDist-vi[2],zj=camDist-vj[2];
+        if(zi>0&&zj>0){
+          const sci=camDist/zi,scj=camDist/zj;
+          const xi=cx+vi[0]*len*sci,yi=cy-vi[1]*len*sci;
+          const xj=cx+vj[0]*len*scj,yj=cy-vj[1]*len*scj;
+          octx.moveTo(xi,yi);octx.lineTo(xj,yj);
+        }
+      });
+      octx.stroke();
+    }
+
+    document.addEventListener('DOMContentLoaded',()=>{
+      const canvas=document.getElementById('mandelbrotCanvas'),ctx=canvas.getContext('2d');
+      const windowDiv=document.getElementById('window');
+      let cellW,cellH;
+      function resize(){
+        const rect=windowDiv.getBoundingClientRect();
+        canvas.width=rect.width;canvas.height=rect.height;
+        updateGridSize();
+        cellW=canvas.width/gridW;cellH=canvas.height/gridH;
+      }
+      window.addEventListener('resize',resize);resize();
+
+      const xBtn=document.getElementById('xAxisBtn'),yBtn=document.getElementById('yAxisBtn'),zBtn=document.getElementById('zAxisBtn');
+      const leftBtn=document.getElementById('leftBtn'),rightBtn=document.getElementById('rightBtn');
+      const toggleBtn=document.getElementById('toggleBtn'),snapCheckbox=document.getElementById('snapCheckbox');
+      const updateBtn=document.getElementById('updateBtn');
+      const controlsDiv=document.getElementById('controls');
+
+      /* --- MENU TOGGLE: top‑left positioning, no maths --- */
+      const panel   = document.getElementById('controls');
+      const btnHide = document.getElementById('btnHide');
+      const btnShow = document.getElementById('btnShow');
+
+      btnHide.onclick = () => {
+        panel.style.display = 'none';
+        btnShow.style.display = 'block';
+        btnHide.disabled = true;          // lock while hidden
+        btnShow.disabled = false;
+      };
+
+      btnShow.onclick = () => {
+        panel.style.display = '';
+        btnShow.style.display = 'none';
+        btnHide.disabled = false;         // lock while shown
+        btnShow.disabled = true;
+      };
+
+      // RPM button logic
+      const rpmValueSpan = document.getElementById('rpmValue');
+      const rpmDec10 = document.getElementById('rpmDec10');
+      const rpmDec1  = document.getElementById('rpmDec1');
+      const rpmInc1  = document.getElementById('rpmInc1');
+      const rpmInc10 = document.getElementById('rpmInc10');
+      let rpm = 6;
+
+      function setRPM(val) {
+        rpm = Math.max(1, Math.min(60, val));
+        rpmValueSpan.textContent = rpm;
+        // recalculate numSlices and sectorSize to match new RPM
+        const currentAngle = (frameIndex / numSlices) % 1;
+        numSlices = Math.round(fps * (60 / rpm));
+        sectorSize = numSlices / 8;
+        frameIndex = Math.round(currentAngle * numSlices) % numSlices;
+      }
+      rpmDec10.onclick = () => setRPM(rpm - 10);
+      rpmDec1.onclick  = () => setRPM(rpm - 1);
+      rpmInc1.onclick  = () => setRPM(rpm + 1);
+      rpmInc10.onclick = () => setRPM(rpm + 10);
+      setRPM(rpm);
+
+      // Remove getBounds and references to controls.minReal, etc.
+      // Instead, use fixed bounds for Mandelbrot set
+      function getBounds() {
+        return {
+          minReal: -2.782,
+          maxReal:  2.782,
+          minImag: -2.782,
+          maxImag:  2.782,
+          minK:    -2,
+          maxK:     2
+        };
+      }
+
+
+      function updateGridSize() {
+        const rect = windowDiv.getBoundingClientRect();
+        // Keep gridW fixed, adjust gridH for aspect ratio
+        gridW = 256;
+        gridH = Math.round(gridW * (rect.height / rect.width));
+      }
+
+      function initiateAxisSwap(axis){if(axis!==currentAxis&&!pendingAxis){pendingAxis=axis;pendingSwapFrame=0;xBtn.disabled=yBtn.disabled=zBtn.disabled=true;}}
+      xBtn.addEventListener('click',()=>initiateAxisSwap('X'));yBtn.addEventListener('click',()=>initiateAxisSwap('Y'));zBtn.addEventListener('click',()=>initiateAxisSwap('Z'));
+      leftBtn.addEventListener('click',()=>{if(autoSpinning){changeSpinDirection(-1);}else{if(snapCheckbox.checked){const currentSector=Math.round(frameIndex/sectorSize)%8;const destSector=(currentSector-1+8)%8;const destFrame=Math.round(destSector*sectorSize)%numSlices;let steps=(frameIndex-destFrame+numSlices)%numSlices;if(steps===0)steps=numSlices;spinDirection=-1;spinStepsRemaining=steps;autoSpinning=true;pendingSnap=false;}else{spinStepsRemaining=Math.round(sectorSize);spinDirection=-1;autoSpinning=true;pendingSnap=false;}}});
+      rightBtn.addEventListener('click',()=>{if(autoSpinning){changeSpinDirection(1);}else{if(snapCheckbox.checked){const currentSector=Math.round(frameIndex/sectorSize)%8;const destSector=(currentSector+1)%8;const destFrame=Math.round(destSector*sectorSize)%numSlices;let steps=(destFrame-frameIndex+numSlices)%numSlices;if(steps===0)steps=numSlices;spinDirection=1;spinStepsRemaining=steps;autoSpinning=true;pendingSnap=false;}else{spinStepsRemaining=Math.round(sectorSize);spinDirection=1;autoSpinning=true;pendingSnap=false;}}});
+      toggleBtn.addEventListener('click',()=>{autoSpinning=!autoSpinning;pendingSnap=false;spinStepsRemaining=0;toggleBtn.textContent=autoSpinning?'Pause':'Play';});
+      updateBtn.addEventListener('click',()=>{frameIndex=0;autoSpinning=true;spinDirection=1;pendingSnap=false;pendingAxis=null;spinStepsRemaining=0;});
+      function changeSpinDirection(dir){if(spinDirection!==dir){spinDirection=dir;autoSpinning=true;}}
+
+      setInterval(()=>{
+        const bounds=getBounds();
+        const theta=(frameIndex/numSlices)*2*Math.PI;
+        const slice=computeSlice(currentAxis,theta,bounds);
+        for(let y=0;y<gridH;y++)for(let x=0;x<gridW;x++){const b=Math.floor(255*(slice[y][x]/maxIter));ctx.fillStyle=`rgb(${b},${b},${b})`;ctx.fillRect(x*cellW,y*cellH,cellW+1,cellH+1);}        
+        drawOverlay();
+        if(autoSpinning){
+          const next=(frameIndex+spinDirection+numSlices)%numSlices;
+          if(pendingAxis&&next===pendingSwapFrame){currentAxis=pendingAxis;pendingAxis=null;xBtn.disabled=currentAxis==='X';yBtn.disabled=currentAxis==='Y';zBtn.disabled=currentAxis==='Z';}
+          frameIndex=next;
+          if(spinStepsRemaining>0){spinStepsRemaining--;if(spinStepsRemaining===0)autoSpinning=false;}
+        }
+        if(autoSpinning){if(spinDirection===1){leftBtn.disabled=false;rightBtn.disabled=true;}else if(spinDirection===-1){leftBtn.disabled=true;rightBtn.disabled=false;}}
+        else{leftBtn.disabled=false;rightBtn.disabled=false;}
+      },frameInterval);
+
+      document.addEventListener('keydown',(e)=>{if(!autoSpinning)return;if(e.key==='ArrowRight'&&spinDirection!==1){changeSpinDirection(1);}/* Optionally add ArrowLeft */});
+    });
+  </script>
+</body>
+</html>
